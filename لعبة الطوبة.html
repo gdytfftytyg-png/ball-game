@@ -1,0 +1,83 @@
+<!DOCTYPE html>
+<html lang="ar" dir="rtl">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>لعبة الطوبة</title>
+<style>
+:root{--bg:#10243a;--panel:#0b1a2b;--pad:#3ddc97;--text:#f2f6fa;box-sizing:border-box;padding-top:env(safe-area-inset-top,0px);padding-bottom:env(safe-area-inset-bottom,0px)}
+:root[data-theme="dark"]{--bg:#10243a}
+html,body{margin:0;height:100%;background:var(--bg);color:var(--text);font-family:"Cairo","Tahoma",sans-serif;overflow:hidden;touch-action:none}
+body{display:flex;flex-direction:column;align-items:center;justify-content:center;gap:6px}
+#score{font-size:20px;font-weight:700}
+canvas{background:var(--panel);border:3px solid #24476b;border-radius:12px;width:min(98vw,calc((100vh - 130px)*0.68));height:auto;aspect-ratio:420/620;touch-action:none}
+#msg{font-size:15px;opacity:.85}
+button{font:inherit;background:var(--pad);color:#06251a;border:0;border-radius:10px;padding:8px 22px;font-weight:700}
+</style>
+<link href="https://fonts.googleapis.com/css2?family=Cairo:wght@600;700&display=swap" rel="stylesheet">
+</head>
+<body>
+<div id="score">النقاط: 0</div>
+<canvas id="c" width="420" height="620"></canvas>
+<div id="msg">اسحب لتحريك المستطيل وكسّر المربعات</div>
+<button id="b">ابدأ</button>
+<script>
+const c=document.getElementById('c'),x=c.getContext('2d',{alpha:false,desynchronized:true});
+const W=c.width,H=c.height;
+const pad={w:90,h:14,x:0,y:H-34};
+const COLS=12,ROWS=6,BS=26,GAP=3,OX=(W-(COLS*(BS+GAP)-GAP))/2,OY=40;
+const colors=['#ff6b6b','#ff9f43','#ffd23f','#3ddc97','#4dabf7','#b197fc'];
+let ball,score=0,running=false,best=0,bricks=[],ac=null;
+function snd(f,d,t='square',v=.12){try{if(!ac)return;const o=ac.createOscillator(),g=ac.createGain();o.type=t;o.frequency.value=f;g.gain.value=v;g.gain.exponentialRampToValueAtTime(.001,ac.currentTime+d);o.connect(g);g.connect(ac.destination);o.start();o.stop(ac.currentTime+d)}catch(e){}}
+function mk(){bricks=[];for(let r=0;r<ROWS;r++)for(let i=0;i<COLS;i++)bricks.push({x:OX+i*(BS+GAP),y:OY+r*(BS+GAP),c:colors[r],a:true});drawBricks()}
+function reset(keep){ball={x:W/2,y:H-70,r:9,dx:3.2,dy:-4};if(!keep)score=0;pad.x=W/2-pad.w/2;mk();upd()}
+function upd(){document.getElementById('score').textContent='النقاط: '+score+(best?'  |  الأفضل: '+best:'')}
+function moveTo(cx){const r=c.getBoundingClientRect();const px=(cx-r.left)*(W/r.width);pad.x=Math.max(0,Math.min(W-pad.w,px-pad.w/2))}
+c.addEventListener('pointermove',e=>moveTo(e.clientX));
+c.addEventListener('pointerdown',e=>moveTo(e.clientX));
+addEventListener('keydown',e=>{if(e.key==='ArrowLeft')pad.x=Math.max(0,pad.x-28);if(e.key==='ArrowRight')pad.x=Math.min(W-pad.w,pad.x+28)});
+function end(t){running=false;document.getElementById('msg').textContent=t;const b=document.getElementById('b');b.textContent='العب مرة ثانية';b.style.display=''}
+const bl=document.createElement('canvas');bl.width=W;bl.height=H;const bx=bl.getContext('2d');
+function drawBricks(){bx.clearRect(0,0,W,H);for(const b of bricks){if(!b.a)continue;bx.fillStyle=b.c;bx.fillRect(b.x,b.y,BS,BS)}}
+function step(){
+ ball.x+=ball.dx;ball.y+=ball.dy;
+ if(ball.x<ball.r){ball.x=ball.r;ball.dx=Math.abs(ball.dx);snd(300,.06)}
+ if(ball.x>W-ball.r){ball.x=W-ball.r;ball.dx=-Math.abs(ball.dx);snd(300,.06)}
+ if(ball.y<ball.r){ball.y=ball.r;ball.dy=Math.abs(ball.dy);snd(300,.06)}
+ for(const b of bricks){
+  if(!b.a)continue;
+  if(ball.x+ball.r>b.x&&ball.x-ball.r<b.x+BS&&ball.y+ball.r>b.y&&ball.y-ball.r<b.y+BS){
+   b.a=false;drawBricks();score++;best=Math.max(best,score);upd();snd(700+Math.random()*300,.09,'triangle',.18);
+   const ox=Math.min(ball.x+ball.r-b.x,b.x+BS-(ball.x-ball.r)),oy=Math.min(ball.y+ball.r-b.y,b.y+BS-(ball.y-ball.r));
+   if(ox<oy)ball.dx*=-1;else ball.dy*=-1;
+   break;
+  }
+ }
+ if(ball.dy>0&&ball.y+ball.r>=pad.y&&ball.y+ball.r<=pad.y+pad.h+8&&ball.x>pad.x-4&&ball.x<pad.x+pad.w+4){
+  const hit=(ball.x-(pad.x+pad.w/2))/(pad.w/2);
+  const sp=Math.min(9,Math.hypot(ball.dx,ball.dy)+0.15);
+  ball.dx=hit*sp*0.8;ball.dy=-Math.sqrt(Math.max(sp*sp-ball.dx*ball.dx,4));
+  snd(220,.08,'sine',.25);
+ }
+ if(bricks.every(b=>!b.a)){snd(880,.4,'sine',.2);end('كفو! كسرت كل المربعات 🎉')}
+ else if(ball.y>H+ball.r){snd(110,.4,'sawtooth',.15);end('خسرت! نقاطك: '+score)}
+}
+let last=0,acc=0;const DT=1000/60;
+function loop(t){
+ if(!last)last=t;
+ let d=t-last;last=t;if(d>100)d=DT;
+ if(running){acc+=d;while(acc>=DT&&running){step();acc-=DT}}else acc=0;
+ x.fillStyle='#0b1a2b';x.fillRect(0,0,W,H);
+ x.drawImage(bl,0,0);
+ x.fillStyle='#3ddc97';x.fillRect(pad.x,pad.y,pad.w,pad.h);
+ x.fillStyle='#ffd23f';x.beginPath();x.arc(ball.x,ball.y,ball.r,0,7);x.fill();
+ requestAnimationFrame(loop);
+}
+document.getElementById('b').onclick=function(){
+ try{ac=ac||new (window.AudioContext||window.webkitAudioContext)();ac.resume()}catch(e){}
+ reset();running=true;this.style.display='none';document.getElementById('msg').textContent='اسحب لتحريك المستطيل وكسّر المربعات';
+};
+reset();requestAnimationFrame(loop);
+</script>
+</body>
+</html>
