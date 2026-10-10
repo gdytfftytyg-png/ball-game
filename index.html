@@ -19,7 +19,7 @@ button{font:inherit;background:var(--pad);color:#06251a;border:0;border-radius:1
 <body>
 <div id="score">النقاط: 0</div>
 <canvas id="c" width="420" height="620"></canvas>
-<div id="msg">اسحب لتحريك المستطيل وكسّر المربعات</div>
+<div id="msg">كل 4 مربعات تنكسر ينزل لك x2، التقطه بالمستطيل وتصير الكرة اثنتين</div>
 <button id="b">ابدأ</button>
 <script>
 const c=document.getElementById('c'),x=c.getContext('2d',{alpha:false,desynchronized:true});
@@ -27,11 +27,11 @@ const W=c.width,H=c.height;
 const pad={w:90,h:14,x:0,y:H-34};
 const COLS=12,ROWS=6,BS=26,GAP=3,OX=(W-(COLS*(BS+GAP)-GAP))/2,OY=40;
 const colors=['#ff6b6b','#ff9f43','#ffd23f','#3ddc97','#4dabf7','#b197fc'];
-let ball,score=0,running=false,best=0,bricks=[],ac=null;
+let balls=[],items=[],hits=0,score=0,running=false,best=0,bricks=[],ac=null;
 function snd(f,d,t='square',v=.12){try{if(!ac)return;const o=ac.createOscillator(),g=ac.createGain();o.type=t;o.frequency.value=f;g.gain.value=v;g.gain.exponentialRampToValueAtTime(.001,ac.currentTime+d);o.connect(g);g.connect(ac.destination);o.start();o.stop(ac.currentTime+d)}catch(e){}}
 function mk(){bricks=[];for(let r=0;r<ROWS;r++)for(let i=0;i<COLS;i++)bricks.push({x:OX+i*(BS+GAP),y:OY+r*(BS+GAP),c:colors[r],a:true});drawBricks()}
-function reset(keep){ball={x:W/2,y:H-70,r:9,dx:3.2,dy:-4};if(!keep)score=0;pad.x=W/2-pad.w/2;mk();upd()}
-function upd(){document.getElementById('score').textContent='النقاط: '+score+(best?'  |  الأفضل: '+best:'')}
+function reset(){balls=[{x:W/2,y:H-70,r:9,dx:3.2,dy:-4}];items=[];hits=0;score=0;pad.x=W/2-pad.w/2;mk();upd()}
+function upd(){document.getElementById('score').textContent='النقاط: '+score+(best?'  |  الأفضل: '+best:'')+'  |  كرات: '+balls.length}
 function moveTo(cx){const r=c.getBoundingClientRect();const px=(cx-r.left)*(W/r.width);pad.x=Math.max(0,Math.min(W-pad.w,px-pad.w/2))}
 c.addEventListener('pointermove',e=>moveTo(e.clientX));
 c.addEventListener('pointerdown',e=>moveTo(e.clientX));
@@ -39,7 +39,7 @@ addEventListener('keydown',e=>{if(e.key==='ArrowLeft')pad.x=Math.max(0,pad.x-28)
 function end(t){running=false;document.getElementById('msg').textContent=t;const b=document.getElementById('b');b.textContent='العب مرة ثانية';b.style.display=''}
 const bl=document.createElement('canvas');bl.width=W;bl.height=H;const bx=bl.getContext('2d');
 function drawBricks(){bx.clearRect(0,0,W,H);for(const b of bricks){if(!b.a)continue;bx.fillStyle=b.c;bx.fillRect(b.x,b.y,BS,BS)}}
-function step(){
+function stepBall(ball){
  ball.x+=ball.dx;ball.y+=ball.dy;
  if(ball.x<ball.r){ball.x=ball.r;ball.dx=Math.abs(ball.dx);snd(300,.06)}
  if(ball.x>W-ball.r){ball.x=W-ball.r;ball.dx=-Math.abs(ball.dx);snd(300,.06)}
@@ -47,7 +47,9 @@ function step(){
  for(const b of bricks){
   if(!b.a)continue;
   if(ball.x+ball.r>b.x&&ball.x-ball.r<b.x+BS&&ball.y+ball.r>b.y&&ball.y-ball.r<b.y+BS){
-   b.a=false;drawBricks();score++;best=Math.max(best,score);upd();snd(700+Math.random()*300,.09,'triangle',.18);
+   b.a=false;drawBricks();score++;hits++;best=Math.max(best,score);snd(700+Math.random()*300,.09,'triangle',.18);
+   if(hits%4===0)items.push({x:b.x+BS/2,y:b.y+BS/2});
+   upd();
    const ox=Math.min(ball.x+ball.r-b.x,b.x+BS-(ball.x-ball.r)),oy=Math.min(ball.y+ball.r-b.y,b.y+BS-(ball.y-ball.r));
    if(ox<oy)ball.dx*=-1;else ball.dy*=-1;
    break;
@@ -55,12 +57,24 @@ function step(){
  }
  if(ball.dy>0&&ball.y+ball.r>=pad.y&&ball.y+ball.r<=pad.y+pad.h+8&&ball.x>pad.x-4&&ball.x<pad.x+pad.w+4){
   const hit=(ball.x-(pad.x+pad.w/2))/(pad.w/2);
-  const sp=Math.min(9,Math.hypot(ball.dx,ball.dy)+0.15);
+  const sp=Math.min(9,Math.hypot(ball.dx,ball.dy)+0.1);
   ball.dx=hit*sp*0.8;ball.dy=-Math.sqrt(Math.max(sp*sp-ball.dx*ball.dx,4));
   snd(220,.08,'sine',.25);
  }
+ return ball.y<=H+ball.r;
+}
+function step(){
+ balls=balls.filter(stepBall);
+ for(let i=items.length-1;i>=0;i--){
+  const it=items[i];it.y+=2.8;
+  if(it.y>=pad.y&&it.y<=pad.y+pad.h+14&&it.x>pad.x-8&&it.x<pad.x+pad.w+8){
+   items.splice(i,1);
+   if(balls.length<8){const cp=balls.map(b=>({x:b.x,y:b.y,r:b.r,dx:-b.dx||2.5,dy:b.dy}));balls.push(...cp)}
+   snd(600,.08,'sine',.2);setTimeout(()=>snd(900,.12,'sine',.2),80);upd();
+  } else if(it.y>H+20)items.splice(i,1);
+ }
  if(bricks.every(b=>!b.a)){snd(880,.4,'sine',.2);end('كفو! كسرت كل المربعات 🎉')}
- else if(ball.y>H+ball.r){snd(110,.4,'sawtooth',.15);end('خسرت! نقاطك: '+score)}
+ else if(!balls.length){snd(110,.4,'sawtooth',.15);end('خسرت! نقاطك: '+score)}
 }
 let last=0,acc=0;const DT=1000/60;
 function loop(t){
@@ -70,12 +84,13 @@ function loop(t){
  x.fillStyle='#0b1a2b';x.fillRect(0,0,W,H);
  x.drawImage(bl,0,0);
  x.fillStyle='#3ddc97';x.fillRect(pad.x,pad.y,pad.w,pad.h);
- x.fillStyle='#ffd23f';x.beginPath();x.arc(ball.x,ball.y,ball.r,0,7);x.fill();
+ x.fillStyle='#ffd23f';for(const b of balls){x.beginPath();x.arc(b.x,b.y,b.r,0,7);x.fill()}
+ for(const it of items){x.fillStyle='#4dd0ff';x.beginPath();x.arc(it.x,it.y,12,0,7);x.fill();x.fillStyle='#06223a';x.font='bold 12px sans-serif';x.textAlign='center';x.fillText('x2',it.x,it.y+4)}
  requestAnimationFrame(loop);
 }
 document.getElementById('b').onclick=function(){
  try{ac=ac||new (window.AudioContext||window.webkitAudioContext)();ac.resume()}catch(e){}
- reset();running=true;this.style.display='none';document.getElementById('msg').textContent='اسحب لتحريك المستطيل وكسّر المربعات';
+ reset();running=true;this.style.display='none';document.getElementById('msg').textContent='كل 4 مربعات تنكسر ينزل لك x2، التقطه بالمستطيل وتصير الكرة اثنتين';
 };
 reset();requestAnimationFrame(loop);
 </script>
